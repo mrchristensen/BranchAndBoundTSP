@@ -82,7 +82,46 @@ class TSPSolver:
 	'''
 
 	def greedy( self,time_allowance=60.0 ):
-		pass
+		results = {}
+		routeFound = False
+		route = []
+		listOfPossibleStartCities = self._scenario.getCities().copy()
+		cities = self._scenario.getCities()
+		startCity = listOfPossibleStartCities.pop()
+		city = startCity
+		route.append(city)
+		start_time = time.time()
+		while routeFound is False:
+			lowestCost = math.inf
+			lowestCity = None
+			for neighbor in cities:
+				if neighbor is city:
+					continue
+				if city.costTo(neighbor) < lowestCost and (neighbor not in route):
+					lowestCost = city.costTo(neighbor)
+					lowestCity = neighbor
+			if lowestCity is None:  # check to see if can't continue
+				if city.costTo(startCity) < lowestCost:  # check to see if we're done
+					routeFound = True
+					bssf = TSPSolution(route)
+				else:
+					route.clear()
+					startCity = listOfPossibleStartCities.pop()
+					city = startCity
+			# route.append(city)
+			else:  # We did find a lowestCity
+				route.append(lowestCity)
+				city = lowestCity
+
+		end_time = time.time()
+		results['cost'] = bssf.cost if routeFound else math.inf
+		results['time'] = end_time - start_time
+		results['count'] = len(route)
+		results['soln'] = bssf
+		results['max'] = None
+		results['total'] = None
+		results['pruned'] = None
+		return results
 	
 	
 	
@@ -111,7 +150,7 @@ class TSPSolver:
 		
 	def fancy( self,time_allowance=60.0 ):
 		pass
-		
+
 
 
 

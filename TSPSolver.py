@@ -1,15 +1,13 @@
 #!/usr/bin/python3
 
 from which_pyqt import PYQT_VER
+
 if PYQT_VER == 'PYQT5':
-	from PyQt5.QtCore import QLineF, QPointF
+    from PyQt5.QtCore import QLineF, QPointF
 elif PYQT_VER == 'PYQT4':
-	from PyQt4.QtCore import QLineF, QPointF
+    from PyQt4.QtCore import QLineF, QPointF
 else:
-	raise Exception('Unsupported Version of PyQt: {}'.format(PYQT_VER))
-
-
-
+    raise Exception('Unsupported Version of PyQt: {}'.format(PYQT_VER))
 
 import time
 import numpy as np
@@ -18,17 +16,17 @@ from heapq import heappop, heappush
 from copy import deepcopy
 import itertools
 
+INF = np.inf
 
 
 class TSPSolver:
-	def __init__( self, gui_view ):
-		self._scenario = None
+    def __init__(self, gui_view):
+        self._scenario = None
 
-	def setupWithScenario( self, scenario ):
-		self._scenario = scenario
+    def setupWithScenario(self, scenario):
+        self._scenario = scenario
 
-
-	''' <summary>
+    ''' <summary>
 		This is the entry point for the default solver
 		which just finds a valid random tour.  Note this could be used to find your
 		initial BSSF.
@@ -38,366 +36,325 @@ class TSPSolver:
 		solution found, and three null values for fields not used for this 
 		algorithm</returns> 
 	'''
-	
-	def defaultRandomTour( self, time_allowance=60.0 ):
-		results = {}
-		cities = self._scenario.getCities()
-		ncities = len(cities)
-		foundTour = False
-		count = 0
-		bssf = None
-		start_time = time.time()
-		while not foundTour and time.time()-start_time < time_allowance:
-			# create a random permutation
-			perm = np.random.permutation( ncities )
-			route = []
-			# Now build the route using the random permutation
-			for i in range( ncities ):
-				route.append( cities[ perm[i] ] )
-			bssf = TSPSolution(route)
-			count += 1
-			if bssf.cost < np.inf:
-				# Found a valid route
-				foundTour = True
-		end_time = time.time()
-		results['cost'] = bssf.cost if foundTour else math.inf
-		results['time'] = end_time - start_time
-		results['count'] = count
-		results['soln'] = bssf
-		results['max'] = None
-		results['total'] = None
-		results['pruned'] = None
-		return results
+
+    def defaultRandomTour(self, time_allowance=60.0):
+        results = {}
+        cities = self._scenario.getCities()
+        ncities = len(cities)
+        foundTour = False
+        count = 0
+        bssf = None
+        start_time = time.time()
+        while not foundTour and time.time() - start_time < time_allowance:
+            # create a random permutation
+            perm = np.random.permutation(ncities)
+            route = []
+            # Now build the route using the random permutation
+            for i in range(ncities):
+                route.append(cities[perm[i]])
+            bssf = TSPSolution(route)
+            count += 1
+            if bssf.cost < INF:
+                # Found a valid route
+                foundTour = True
+        end_time = time.time()
+        results['cost'] = bssf.cost if foundTour else math.inf
+        results['time'] = end_time - start_time
+        results['count'] = count
+        results['soln'] = bssf
+        results['max'] = None
+        results['total'] = None
+        results['pruned'] = None
+        return results
+
+    ''' <summary>
+    	This is the entry point for the greedy solver, which you must implement for 
+    	the group project (but it is probably a good idea to just do it for the branch-and
+    	bound project as a way to get your feet wet).  Note this could be used to find your
+    	initial BSSF.
+    	</summary>
+    	<returns>results dictionary for GUI that contains three ints: cost of best solution, 
+    	time spent to find best solution, total number of solutions found, the best
+    	solution found, and three null values for fields not used for this 
+    	algorithm</returns> 
+    '''
+
+    # time complexity: O(n) * O(n) = O(n^)
+    # space complexity: O(n) + O(n) + O(n) = O(3n) = O(n)
+    def greedy(self, time_allowance=60.0):
+        route_found = False
+        route = []  # Space: O(n)
+        list_of_possible_start_cities = self._scenario.getCities().copy()  # Space: O(n)
+        cities = self._scenario.getCities()  # Space: O(n)
+        start_city = list_of_possible_start_cities.pop()
+        city = start_city
+        route.append(city)
+        start_time = time.time()
+        while route_found is False and (time.time() - start_time) < time_allowance:  # O(n)
+            lowest_cost = math.inf
+            lowest_city = None
+            for neighbor in cities:  # O(n)
+                if neighbor is city:
+                    continue
+                if city.costTo(neighbor) < lowest_cost and (neighbor not in route):
+                    lowest_cost = city.costTo(neighbor)
+                    lowest_city = neighbor
+            if lowest_city is None:  # check to see if can't continue
+                if city.costTo(start_city) < lowest_cost:  # check to see if we're done
+                    route_found = True
+                    best_sol_so_far = TSPSolution(route)
+                else:
+                    route.clear()
+                    start_city = list_of_possible_start_cities.pop()
+                    city = start_city
+            else:  # we did find a lowest_city
+                route.append(lowest_city)
+                city = lowest_city
+
+        end_time = time.time()
+        results = {'route': best_sol_so_far.route, 'cost': best_sol_so_far.cost if route_found else math.inf,
+                   'time': end_time - start_time, 'count': len(route), 'soln': best_sol_so_far, 'max': None,
+                   'total': None, 'pruned': None}
+        return results
+
+    ''' <summary>
+        This is the entry point for the branch-and-bound algorithm that you will implement
+        </summary>
+        <returns>results dictionary for GUI that contains three ints: cost of best solution, 
+        time spent to find best solution, total number solutions found during search (does
+        not include the initial BSSF), the best solution found, and three more ints: 
+        max queue size, total number of states created, and number of pruned states.</returns> 
+    '''
+
+    # time complexity: worse case: O(n!) - average: O(p) * (O(log n) + (O(n) * (O(log n) + O(n^2) + O(log n)))) =
+    #                                               O(p) * (O(log n) + O(n * n^2)) = O(p) * O(n^3) = O(pn^3)
+    # space complexity: worse case: O(n!) - average: (p) * O(n^2 + n) = O(p * n^2)
+    def branch_and_bound(self, time_allowance=60.0):
+        count = pruned_states = 0
+        max_heap_size = total_states = 1
+        solution_to_beat = TSPSolution(self.greedy()['route'])  # O(n^2) for time, O(n) for space
+
+        heap = []
+        cities = self._scenario.getCities()
+        state = SearchState([cities[0]], cities, 0)
+        state.init_matrix()
+        state.reduce_matrix()
+        heappush(heap, state)
+
+        start_time = time.time()
+        # time complexity: worse case: O(n!) - average: O(p) * (O(log n) + (O(n) * (# O(log n) + O(n^2) + O(log n))))
+        # space complexity: worse case: O(n!) - average: (p) * O(n^2 + n) = O(p * n^2)
+        while (time.time() - start_time) < time_allowance and len(heap) > 0:
+
+            # record the biggest heap size we've seen
+            max_heap_size = len(heap) if len(heap) > max_heap_size else max_heap_size
+
+            # get next state to analyze
+            current_state = heappop(heap)  # O(log n)
+
+            # if state is less costly
+            if current_state.best_cost < solution_to_beat.cost:
+
+                # if path contains all cities (make sure it's a valid solution)
+                if len(current_state.route) == len(cities):
+                    last_cost = current_state.route[-1].costTo(current_state.route[0])
+                    current_state.best_cost += last_cost
+
+                    # if state cost is better than our current best solution
+                    if current_state.best_cost < solution_to_beat.cost:
+                        solution_to_beat = TSPSolution(deepcopy(current_state.route))
+                        count += 1
+
+                # if out path doesn't contain all cities (make it a loop)
+                else:
+                    for city in cities:  # O(n)
+
+                        # add cities that are not in our path
+                        if not current_state.city_in_route(city):
+                            total_states += 1
+                            new_path = current_state.route.copy().append(city)  # add current city
+                            new_state = SearchState(new_path, cities, current_state.best_cost)
+                            new_state.cost_matrix = np.copy(current_state.cost_matrix)  # O(log n)
+                            city1 = new_state.route[new_state.len() - 2]
+                            city2 = new_state.route[new_state.len() - 1]
+                            new_state.set_cities_to_infinity(city1._index, city2._index)  # O(1)
+                            new_state.reduce_matrix()  # O(n^2)
+
+                            # if the new state could be better than the current solution
+                            if new_state.best_cost < solution_to_beat.cost:
+                                heappush(heap, new_state)  # O(log n)
+                            # if the new state can't beat the current solution then we prune
+                            else:
+                                pruned_states += 1
+
+            # if there is not improvement (after evaluating the state) then we prune the state
+            else:
+                pruned_states += 1
+
+        end_time = time.time()
+
+        results = {'cost': solution_to_beat.cost, 'time': end_time - start_time, 'count': count,
+                   'soln': solution_to_beat, 'max': max_heap_size, 'total': total_states,
+                   'pruned': pruned_states + len(heap)}
+        return results
+
+    def fancy(self, time_allowance=60.0):
+        pass
 
 
-	''' <summary>
-		This is the entry point for the greedy solver, which you must implement for 
-		the group project (but it is probably a good idea to just do it for the branch-and
-		bound project as a way to get your feet wet).  Note this could be used to find your
-		initial BSSF.
-		</summary>
-		<returns>results dictionary for GUI that contains three ints: cost of best solution, 
-		time spent to find best solution, total number of solutions found, the best
-		solution found, and three null values for fields not used for this 
-		algorithm</returns> 
-	'''
+class SearchState:
+    def __init__(self, path, cities, best_cost):
+        super().__init__()
+        self.cost_matrix = np.zeros(shape=(len(self.cities), len(self.cities)))
+        self.best_cost = best_cost
+        self.route = path
+        self.cities = cities
 
-	def greedy( self,time_allowance=60.0 ):
-		results = {}
-		routeFound = False
-		route = []
-		listOfPossibleStartCities = self._scenario.getCities().copy()
-		cities = self._scenario.getCities()
-		startCity = listOfPossibleStartCities.pop()
-		city = startCity
-		route.append(city)
-		start_time = time.time()
-		while routeFound is False:
-			lowestCost = math.inf
-			lowestCity = None
-			for neighbor in cities:
-				if neighbor is city:
-					continue
-				if city.costTo(neighbor) < lowestCost and (neighbor not in route):
-					lowestCost = city.costTo(neighbor)
-					lowestCity = neighbor
-			if lowestCity is None:  # check to see if can't continue
-				if city.costTo(startCity) < lowestCost:  # check to see if we're done
-					routeFound = True
-					bssf = TSPSolution(route)
-				else:
-					route.clear()
-					startCity = listOfPossibleStartCities.pop()
-					city = startCity
-			# route.append(city)
-			else:  # We did find a lowestCity
-				route.append(lowestCity)
-				city = lowestCity
+    # comparison function
+    # time complexity: O(1)
+    # space complexity: O(1)
+    def __lt__(self, value):
+        if len(self.route) is not len(value.route):
+            return len(self.route) > len(value.route)
+        else:
+            return self.best_cost < value.best_cost
 
-		end_time = time.time()
-		results['route'] = bssf.route
-		results['cost'] = bssf.cost if routeFound else math.inf
-		results['time'] = end_time - start_time
-		results['count'] = len(route)
-		results['soln'] = bssf
-		results['max'] = None
-		results['total'] = None
-		results['pruned'] = None
-		return results
-	
-	
-	
-	''' <summary>
-		This is the entry point for the branch-and-bound algorithm that you will implement
-		</summary>
-		<returns>results dictionary for GUI that contains three ints: cost of best solution, 
-		time spent to find best solution, total number solutions found during search (does
-		not include the initial BSSF), the best solution found, and three more ints: 
-		max queue size, total number of states created, and number of pruned states.</returns> 
-	'''
-		
-	def branchAndBound( self, time_allowance=60.0 ):
-		results = {}
-		cities = self._scenario.getCities()
-		ncities = len(cities)
-		foundTour = False
-		count = 0
-		bssf = None
-		startIndex = 0
-		startCity = cities[startIndex]
-		currentCity = startCity
-		results = self.greedy()
-		route = results['route']
-		bssf = TSPSolution(route)
-		foundTour = True
-		heap = []
-		iState = TSPState([cities[0]], cities, 0)
-		iState.initMatrix()
-		iState.reduceMatrix()
-		heappush(heap, iState)
-		start_time = time.time()
-		maxHeapSize = 1
-		totalStates = 1
-		prunedStates = 0
-		print("starting b&b")
-		while (time.time() - start_time) < time_allowance and len(
-				heap) > 0:  # searches state while there are potentially better paths, worst case O(n!), but approximates to O(n^k), where k = total states - pruned states
-			if len(heap) > maxHeapSize:  # if current heapsize is greater than max size so far, set max size
-				maxHeapSize = len(heap)  # so far to current heap size
+    # initialize cost matrix for cities
+    # time complexity: O(n) * O(n) * O(1) = O(n^2)
+    # space complexity: O(n^2)
+    def init_matrix(self):
+        self.cost_matrix = np.zeros(shape=(len(self.cities), len(self.cities)))  # O(n^2)
+        row_index = 0
+        for fromCity in self.cities:  # O(n)
+            col_index = 0
+            for toCity in self.cities:  # O(n)
+                self.cost_matrix[row_index][col_index] = fromCity.costTo(toCity)  # O(1)
+                col_index += 1
+            row_index += 1
 
-			currentState = heappop(heap)  # pop best potential solution off queue
-			if currentState.bestCost < bssf.cost:  # if the state cost is potentially better than current cost, continue
-				if len(currentState.path) == len(
-						cities):  # if every city is in the path, verify that the path is a cycle
-					lastCost = currentState.path[-1].costTo(currentState.path[0])
-					currentState.bestCost += lastCost
-					if currentState.bestCost < bssf.cost:  # if state path is a cycle, set best cost and best path to state path and cost
-						bssf = TSPSolution(deepcopy(currentState.path))
-						count += 1
-				else:
-					for city in cities:
-						if not currentState.inPath(
-								city):  # visit every city that has not been visited by the current path
-							totalStates += 1
-							newPath = currentState.path.copy()
-							newPath.append(city)
-							newState = TSPState(newPath, cities, currentState.bestCost)
-							newState.costMatrix = np.copy(currentState.costMatrix)
-							city1 = newState.path[newState.len() - 2]
-							city2 = newState.path[newState.len() - 1]
-							newState.coverCities(city1._index, city2._index)
-							newState.reduceMatrix()
-							if newState.bestCost < bssf.cost:  # if state is potentially better than current best, push onto heap, else, prune state
-								heappush(heap, newState)
-							else:
-								prunedStates += 1
-			else:  # if state cost is worse than best cost, prune state
-				prunedStates += 1
+    # time complexity: O(1)
+    # space complexity: O(1)
+    def __str__(self):
+        return str(self.cost_matrix)
 
-		end_time = time.time()
-		print("ending b&b")
-		results['cost'] = bssf.cost if foundTour else math.inf
-		results['time'] = end_time - start_time
-		results['count'] = count
-		results['soln'] = bssf
-		results['max'] = maxHeapSize
-		results['total'] = totalStates
-		results['pruned'] = prunedStates + len(heap)
-		return results
+    # time complexity: O(1)
+    # space complexity: O(1)
+    def len(self):
+        return len(self.route)
 
+    # time complexity: O(n)
+    # space complexity: O(1)
+    def city_in_route(self, city):
+        for val in self.route:  # Worst case: O(n)
+            if val._index == city._index:  # O(1)
+                return True
+        return False
 
+    # time complexity: O(1)
+    # space complexity: O(1)
+    def set_matrix(self, matrix):
+        self.cost_matrix = matrix
 
-	''' <summary>
-		This is the entry point for the algorithm you'll write for your group project.
-		</summary>
-		<returns>results dictionary for GUI that contains three ints: cost of best solution, 
-		time spent to find best solution, total number of solutions found during search, the 
-		best solution found.  You may use the other three field however you like.
-		algorithm</returns> 
-	'''
-		
-	def fancy( self,time_allowance=60.0 ):
-		pass
+    # gets the cost from two cities, while setting the row and column to infinity
+    # time complexity: O(n) + O(n) + O(1) = O(2n + 1) = O(2n) = O(n)
+    # space complexity: O(1)
+    def set_cities_to_infinity(self, from_city, to_city):
+        self.best_cost += self.cost_matrix[from_city][to_city]
+        if self.best_cost != INF:
+            self.set_row_to_infinity(from_city)  # O(n)
+            self.set_column_to_infinity(to_city)  # O(n)
+            self.set_city_to_infinity(from_city, to_city)  # O(1)
 
+    # reduce matrix by reducing columns and rows
+    # time complexity: O(n^2) + O(n^2) = O(2n^2) = O(n^2)
+    # space complexity: O(1)
+    def reduce_matrix(self):
+        # skip reducing if best cost is infinity (it's not going to get better)
+        if self.best_cost != INF:
+            self.reduce_matrix_rows()  # O(n^2)
+            self.reduce_matrix_columns()  # O(n^2)
 
-class TSPState:
-	def __init__(self, path, cities, bestCost):
-		super().__init__()
-		self.bestCost = bestCost
-		self.path = path
-		self.cities = cities
+    # reduce columns of the cost matrix by finding the minimum and reducing if > 0 and < INF
+    # time complexity: O(n) * O(n + n) = O(n) * O(2n) = O(2n^2) = O(n^2)
+    # space complexity: O(1)
+    def reduce_matrix_rows(self):
+        for row in range(len(self.cost_matrix)):  # O(n)
+            minimum, minimum_index = self.find_row_minimum(row)  # O(n)
+            if minimum > 0 and minimum != INF:
+                self.reduce_row(row, minimum)  # O(k)
+                self.best_cost += minimum
 
-	"""
-        comparison function used by the heapq library. Initially compares the path length, choosing the longer path. 
-        If the paths are the same length, then the current cost is used to compare heap values
-        O(1) 
-    """
+    # reduce columns of the cost matrix by finding the minimum and reducing if > 0 and < INF
+    # time complexity: O(n) * O(n + n) = O(n) * O(2n) = O(2n^2) = O(n^2)
+    # space complexity: O(1)
+    def reduce_matrix_columns(self):
+        for column in range(len(self.cost_matrix[0])):  # O(n)
+            minimum, minimum_index = self.find_column_minimum(column)  # O(n)
+            if minimum > 0 and minimum != INF:
+                self.reduce_column(column, minimum)  # O(n)
+                self.best_cost += minimum
 
-	def __lt__(self, value):
-		if len(self.path) is not len(value.path):
-			return len(self.path) > len(value.path)
-		else:
-			return self.bestCost < value.bestCost
+    # reduce column by subtracting the cost and minimum val
+    # time complexity: O(n)
+    # space complexity: O(1)
+    def reduce_row(self, row, minimum):
+        for column in range(len(self.cost_matrix[row])):  # O(n)
+            new_cost = self.cost_matrix[row][column] - minimum
+            if new_cost == np.nan:
+                self.cost_matrix[row][column] = INF
+            else:
+                self.cost_matrix[row, column] = new_cost
 
-	"""         
-        Initializes cost matrix to the costs between cities.
-        O(n^2)
-    """
+    # reduce column by subtracting the cost and minimum val
+    # time complexity: O(n)
+    # space complexity: O(1)
+    def reduce_column(self, column, minimum):
+        for row in range(len(self.cost_matrix)):  # O(n)
+            new_cost = self.cost_matrix[row][column] - minimum
+            if new_cost == np.nan:
+                self.cost_matrix[row][column] = INF
+            else:
+                self.cost_matrix[row, column] = new_cost
 
-	def initMatrix(self):
-		self.costMatrix = np.zeros(shape=(len(self.cities), len(self.cities)))
-		row_index = 0
-		col_index = 0
-		for fromCity in self.cities:
-			col_index = 0
-			for toCity in self.cities:
-				self.costMatrix[row_index][col_index] = fromCity.costTo(toCity)
-				col_index += 1
-			row_index += 1
+    # find lowest value in the cost matrix row
+    # time complexity: O(n)
+    # space complexity: O(1)
+    def find_row_minimum(self, row):
+        minimum = self.cost_matrix[row][0]
+        minimum_index = 0
+        for column in range(len(self.cost_matrix[row])):  # O(n)
+            if self.cost_matrix[row][column] < minimum:
+                minimum = self.cost_matrix[row][column]
+                minimum_index = column
 
-	def __str__(self):
-		return str(self.costMatrix)
+        return minimum, minimum_index
 
-	def len(self):
-		return len(self.path)
+    # find lowest value in the cost matrix column
+    # time complexity: O(n)
+    # space complexity: O(1)
+    def find_column_minimum(self, column):
+        min_index = 0
+        minimum = self.cost_matrix[min_index][column]
+        for row in range(len(self.cost_matrix)):  # O(n)
+            if self.cost_matrix[row][column] < minimum:
+                minimum = self.cost_matrix[row][column]
+                min_index = row
+        return minimum, min_index
 
-	def inPath(self, city):
-		for val in self.path:
-			if val._index == city._index:
-				return True
-		return False
+    # set a row in the cost matrix to infinity
+    # time complexity: O(n)
+    # space complexity: O(1)
+    def set_row_to_infinity(self, row):
+        self.cost_matrix[row][:] = INF
 
-	def setMatrix(self, matrix):
-		self.costMatrix = matrix
+    # set a column in the cost matrix to infinity
+    # time complexity: O(n)
+    # space complexity: O(1)
+    def set_column_to_infinity(self, column):
+        self.cost_matrix[:][column] = INF
 
-	"""
-        Grabs the travel cost from one city to the other. The from row, the to column, and the value at (toCity, fromCity) 
-        are set to infinity. If cost is infinity, this operation is skipped because we are throwing out this state anyways
-        O(2n + 1)
-    """
-
-	def coverCities(self, fromCity, toCity):
-		self.bestCost += self.costMatrix[fromCity][toCity]
-		if self.bestCost != np.inf:
-			self.infRow(fromCity)
-			self.infCol(toCity)
-			self.infPair(fromCity, toCity)
-
-	"""
-        Performs row and column reduction operations on the cost matrix. If best cost is infinity, this operation is skipped because 
-        the best cost will still be infinity, meaning the state will never enter the queue anyways
-        O(kn^2) # where k is the number of cities
-    """
-
-	def reduceMatrix(self):
-		if self.bestCost != np.inf:
-			self.reduceMatrixRows()
-			self.reduceMatrixCols()
-
-	"""
-        Performs a row reduction on every row by subtracting the minimum row value from every value in the row. This function also increments the bestCost 
-        value. Operation is skipped if min value is 0 or infinity, due to the redundancy of such an operation. 
-        O(kn + k) #  where k is the number of cities
-    """
-
-	def reduceMatrixRows(self):
-		for row in range(len(self.costMatrix)):
-			min, minIndex = self.findRowMin(row)
-			if min != np.inf and min > 0:
-				self.reduceRow(row, min, minIndex)
-				self.bestCost += min
-
-	"""
-        Performs a col reduction by subtracting the minimum col value from every value in the col. This function also increments the bestCost 
-        value. Operation is skipped if min value is 0 or infinity, due to the redundancy of such an operation. 
-        O(kn + k) #  where k is the number of cities
-    """
-
-	def reduceMatrixCols(self):
-		for col in range(len(self.costMatrix[0])):
-			min, minIndex = self.findColMin(col)
-			if min != np.inf and min > 0:
-				self.reduceCol(col, min, minIndex)
-				self.bestCost += min
-
-	"""
-        This function actually performs the row reduction, subtracting the min value from the row
-        O(n)
-    """
-
-	def reduceRow(self, row, min, minIndex):
-		for col in range(len(self.costMatrix[row])):
-			newCost = self.costMatrix[row][col] - min
-			if newCost == np.nan:
-				self.costMatrix[row][col] = np.inf
-			else:
-				self.costMatrix[row, col] = newCost
-
-	"""
-        This function actually performs the column reduction, subtracting the min vale from the column
-        O(n)
-    """
-
-	def reduceCol(self, col, min, minIndex):
-		for row in range(len(self.costMatrix)):
-			newCost = self.costMatrix[row][col] - min
-			if newCost == np.nan:
-				self.costMatrix[row][col] = np.inf
-			else:
-				self.costMatrix[row, col] = newCost
-
-	"""
-        Iterates through a row to find a minimum value and it's location
-        O(n)
-    """
-
-	def findRowMin(self, row):
-		min = self.costMatrix[row][0]
-		minIndex = 0
-		for col in range(len(self.costMatrix[row])):
-			if self.costMatrix[row][col] < min:
-				min = self.costMatrix[row][col]
-				minIndex = col
-
-		return min, minIndex
-
-	"""
-        Iterates through a column to find a minimum value and it's location
-        O(n)
-    """
-
-	def findColMin(self, col):
-		min = self.costMatrix[0][col]
-		minIndex = 0
-		row = 0
-		for row in range(len(self.costMatrix)):
-			if self.costMatrix[row][col] < min:
-				min = self.costMatrix[row][col]
-				minIndex = row
-		return min, minIndex
-
-	"""
-        Iterates through a row and sets each value to infinity
-        O(n)
-    """
-
-	def infRow(self, row):
-		for i in range(len(self.costMatrix[row])):
-			self.costMatrix[row][i] = np.inf
-
-	"""
-        Iterates through a column and sets each value to infinity
-        O(n)
-    """
-
-	def infCol(self, col):
-		for i in range(len(self.costMatrix)):
-			self.costMatrix[i][col] = np.inf
-
-	"""
-        Sets the cost from the column city to the row city to infinity
-        O(1)
-    """
-
-	def infPair(self, row, col):
-		self.costMatrix[col][row] = np.inf
+    # set a given city's cost to infinity
+    # time complexity: O(1)
+    # space complexity: O(1)
+    def set_city_to_infinity(self, row, col):
+        self.cost_matrix[col][row] = INF

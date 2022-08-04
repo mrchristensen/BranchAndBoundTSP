@@ -4,6 +4,8 @@ Attempting to find solutions to the Traveling Salesperson Problem using a [Branc
 
 The implementation can be found in [TSPSolver.py](/TSPSolver.py)
 
+Additionally, see the 2-Opt approach (and comparision) in [this](https://github.com/mrchristensen/2-OptTravelingSalesperson) repository.
+
 ## Results
 ![](images/TSP1.jpg)
 
